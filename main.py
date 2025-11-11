@@ -17,29 +17,40 @@ import uuid
 
 # ========== НАСТРОЙКИ ПО УМОЛЧАНИЮ (можно изменить здесь) ==========
 DEFAULT_URL = "https://www.google.com/"
-DEFAULT_WINDOWS_COUNT = 2
+DEFAULT_WINDOWS_COUNT = 1
 DEFAULT_BROWSER = "chrome"
 # ====================================================================
 
 
+def cleanup_chrome_profile(profile_path: str) -> None:
+    """Удаляет файлы блокировок и другие временные артефакты профиля Chrome."""
+    os.makedirs(profile_path, exist_ok=True)
+    for lock_name in ("SingletonLock", "SingletonCookie", "SingletonCookies", "DevToolsActivePort"):
+        lock_path = os.path.join(profile_path, lock_name)
+        if os.path.exists(lock_path):
+            try:
+                os.remove(lock_path)
+            except OSError:
+                pass
+
+
+def get_base_chrome_profile() -> str:
+    """Возвращает путь к основному профилю Chrome и подчищает его артефакты."""
+    base_profile = os.path.abspath(os.path.join(os.path.dirname(__file__), "chrome_profile"))
+    cleanup_chrome_profile(base_profile)
+    return base_profile
+
+
 def prepare_chrome_profile(instance_index: int) -> str:
     """Создает изолированную копию профиля Chrome для параллельного окна."""
-    base_profile = os.path.abspath(os.path.join(os.path.dirname(__file__), "chrome_profile"))
-    os.makedirs(base_profile, exist_ok=True)
+    base_profile = get_base_chrome_profile()
 
     clones_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "chrome_profile_clones"))
     os.makedirs(clones_root, exist_ok=True)
 
     profile_clone = os.path.join(clones_root, f"profile_{instance_index}_{uuid.uuid4().hex}")
     shutil.copytree(base_profile, profile_clone, dirs_exist_ok=True)
-
-    for lock_name in ("SingletonLock", "SingletonCookie", "SingletonCookies", "DevToolsActivePort"):
-        lock_path = os.path.join(profile_clone, lock_name)
-        if os.path.exists(lock_path):
-            try:
-                os.remove(lock_path)
-            except OSError:
-                pass
+    cleanup_chrome_profile(profile_clone)
 
     return profile_clone
 
@@ -113,19 +124,25 @@ def open_browser_windows(url, count, browser_type="chrome"):
     chrome_profiles = []
     
     print(f"Открываю {count} окон браузера {browser_type} с URL: {url}")
-    
     try:
         for i in range(count):
             print(f"Открываю окно {i + 1}/{count}...")
             
             if browser_type.lower() == "chrome":
-                profile_path = prepare_chrome_profile(i)
+                use_base_profile = False
+                if count == 1:
+                    profile_path = get_base_chrome_profile()
+                    use_base_profile = True
+                else:
+                    profile_path = prepare_chrome_profile(i)
                 try:
                     driver = create_chrome_driver(profile_path)
                 except Exception:
-                    shutil.rmtree(profile_path, ignore_errors=True)
+                    if not use_base_profile:
+                        shutil.rmtree(profile_path, ignore_errors=True)
                     raise
-                chrome_profiles.append(profile_path)
+                if not use_base_profile:
+                    chrome_profiles.append(profile_path)
             elif browser_type.lower() == "firefox":
                 driver = create_firefox_driver()
             else:
