@@ -133,7 +133,7 @@ geckodriver.log
 chromedriver.log
 
 # Browser profiles
-chrome_profile/
+# chrome_profile/
 chrome_profile_clones/
 
 # OS generated files
