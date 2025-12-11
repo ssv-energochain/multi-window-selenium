@@ -135,6 +135,8 @@ chromedriver.log
 # Browser profiles
 chrome_profile/
 chrome_profile_clones/
+yandex_profile/
+yandex_profile_clones/
 
 # OS generated files
 .DS_Store

@@ -13,12 +13,14 @@ from webdriver_manager.firefox import GeckoDriverManager
 import os
 import shutil
 import uuid
+import time
 
 
 # ========== НАСТРОЙКИ ПО УМОЛЧАНИЮ (можно изменить здесь) ==========
-DEFAULT_URL = "https://www.google.com/"
+DEFAULT_URL = "https://google.com"
+# DEFAULT_URL = "https://platform-portal-feature-business-trips.kube.energochain.ru/portal/login"
 DEFAULT_WINDOWS_COUNT = 1
-DEFAULT_BROWSER = "chrome"
+DEFAULT_BROWSER = "firefox"
 # ====================================================================
 
 
@@ -37,7 +39,7 @@ def cleanup_chrome_profile(profile_path: str) -> None:
 def get_base_chrome_profile() -> str:
     """Возвращает путь к основному профилю Chrome и подчищает его артефакты."""
     base_profile = os.path.abspath(os.path.join(os.path.dirname(__file__), "chrome_profile"))
-    cleanup_chrome_profile(base_profile)
+    # cleanup_chrome_profile(base_profile)
     return base_profile
 
 
@@ -86,7 +88,7 @@ def create_firefox_driver():
     """Создает драйвер Firefox с использованием готового профиля"""
     firefox_extensions = [os.path.abspath(os.path.join(os.path.dirname(__file__), "extensions", "cryptopro.xpi"))]
     options = FirefoxOptions()
-    options.add_argument('--disable-features=DisableLoadExtensionCommandLineSwitch')
+    # Убрал Chrome-аргумент, который ломал Firefox
     
     # Установка и проверка драйвера
     driver_path = GeckoDriverManager().install()
@@ -111,6 +113,60 @@ def create_firefox_driver():
     return driver
 
 
+def get_base_yandex_profile() -> str:
+    """Возвращает путь к основному профилю Yandex и подчищает его артефакты."""
+    base_profile = os.path.abspath(os.path.join(os.path.dirname(__file__), "yandex_profile"))
+    return base_profile
+
+
+def prepare_yandex_profile(instance_index: int) -> str:
+    """Создает изолированную копию профиля Yandex для параллельного окна."""
+    base_profile = get_base_yandex_profile()
+
+    clones_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "yandex_profile_clones"))
+    os.makedirs(clones_root, exist_ok=True)
+
+    profile_clone = os.path.join(clones_root, f"profile_{instance_index}_{uuid.uuid4().hex}")
+    shutil.copytree(base_profile, profile_clone, dirs_exist_ok=True)
+    cleanup_chrome_profile(profile_clone)  # Yandex использует те же файлы блокировок
+
+    return profile_clone
+
+
+def create_yandex_driver(profile_path: str):
+    """Создает драйвер Yandex Browser на основе указанного профиля.
+    
+    YandexDriver - это форк ChromeDriver, поэтому используем ChromeOptions.
+    """
+    options = ChromeOptions()
+    os.makedirs(profile_path, exist_ok=True)
+
+    options.add_argument(f"--user-data-dir={profile_path}")
+    options.add_argument("--profile-directory=Default")
+    options.add_argument("--start-maximized")
+    options.add_argument("--disable-infobars")
+    options.add_argument("--disable-features=DisableLoadExtensionCommandLineSwitch")
+    options.add_argument("--disable-extensions-file-access-check")
+    options.add_argument("--disable-features=ExtensionsToolbarMenu")
+    options.add_argument("--allow-running-insecure-content")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
+    
+    # Убираем плашку "управляет автоматизированное ПО"
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+
+    # Путь к yandexdriver.exe в корне проекта
+    yandex_driver_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "yandexdriver.exe"))
+    
+    if not os.path.exists(yandex_driver_path):
+        raise FileNotFoundError(f"YandexDriver не найден: {yandex_driver_path}")
+
+    service = ChromeService(yandex_driver_path)
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
+
+
 def open_browser_windows(url, count, browser_type="chrome"):
     """
     Открывает указанное количество окон браузера
@@ -118,10 +174,10 @@ def open_browser_windows(url, count, browser_type="chrome"):
     Args:
         url: URL для открытия
         count: количество окон
-        browser_type: тип браузера ('chrome' или 'firefox')
+        browser_type: тип браузера ('chrome', 'firefox' или 'yandex')
     """
     drivers = []
-    chrome_profiles = []
+    temp_profiles = []  # Временные профили для Chrome/Yandex
     
     print(f"Открываю {count} окон браузера {browser_type} с URL: {url}")
     try:
@@ -132,9 +188,11 @@ def open_browser_windows(url, count, browser_type="chrome"):
                 use_base_profile = False
                 if count == 1:
                     profile_path = get_base_chrome_profile()
+                    print(f"profile_path: {profile_path}")
                     use_base_profile = True
                 else:
                     profile_path = prepare_chrome_profile(i)
+                    print(f"profile_path: {profile_path}")
                 try:
                     driver = create_chrome_driver(profile_path)
                 except Exception:
@@ -142,7 +200,26 @@ def open_browser_windows(url, count, browser_type="chrome"):
                         shutil.rmtree(profile_path, ignore_errors=True)
                     raise
                 if not use_base_profile:
-                    chrome_profiles.append(profile_path)
+                    temp_profiles.append(profile_path)
+                    
+            elif browser_type.lower() == "yandex":
+                use_base_profile = False
+                if count == 1:
+                    profile_path = get_base_yandex_profile()
+                    print(f"profile_path: {profile_path}")
+                    use_base_profile = True
+                else:
+                    profile_path = prepare_yandex_profile(i)
+                    print(f"profile_path: {profile_path}")
+                try:
+                    driver = create_yandex_driver(profile_path)
+                except Exception:
+                    if not use_base_profile:
+                        shutil.rmtree(profile_path, ignore_errors=True)
+                    raise
+                if not use_base_profile:
+                    temp_profiles.append(profile_path)
+                    
             elif browser_type.lower() == "firefox":
                 driver = create_firefox_driver()
             else:
@@ -177,11 +254,23 @@ def open_browser_windows(url, count, browser_type="chrome"):
             except Exception as e:
                 print(f"Не удалось закрыть окно {i + 1}: {e}")
 
-        for profile_path in chrome_profiles:
-            try:
-                shutil.rmtree(profile_path)
-            except Exception as e:
-                print(f"Не удалось удалить временный профиль Chrome {profile_path}: {e}")
+        # Даём время на освобождение файлов после закрытия браузеров
+        if temp_profiles:
+            print(f"Удаляю {len(temp_profiles)} временных профилей...")
+            time.sleep(1)
+            
+        for profile_path in temp_profiles:
+            # Retry механизм для Windows - файлы могут быть заблокированы
+            for attempt in range(3):
+                try:
+                    shutil.rmtree(profile_path)
+                    print(f"  ✓ Удалён: {os.path.basename(profile_path)}")
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(1)
+                    else:
+                        print(f"  ✗ Не удалось удалить {profile_path}: {e}")
 
         print(f"✅ Закрыто {successful_closes}/{len(drivers)} окон")
 
@@ -206,9 +295,9 @@ def main():
     parser.add_argument(
         "-b", "--browser",
         type=str,
-        choices=["chrome", "firefox"],
+        choices=["chrome", "firefox", "yandex"],
         default=DEFAULT_BROWSER,
-        help=f"Тип браузера: chrome или firefox (по умолчанию: {DEFAULT_BROWSER})"
+        help=f"Тип браузера: chrome, firefox или yandex (по умолчанию: {DEFAULT_BROWSER})"
     )
     
     args = parser.parse_args()
