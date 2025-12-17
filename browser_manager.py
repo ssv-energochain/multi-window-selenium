@@ -150,9 +150,63 @@ class BrowserManager:
         options.add_argument("--disable-gpu")
         options.add_argument("--remote-debugging-port=0")
         
+        # Скрываем признаки автоматизации
+        options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+        options.add_experimental_option("useAutomationExtension", False)
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        
         driver_path = ChromeDriverManager().install()
         service = ChromeService(driver_path)
-        return webdriver.Chrome(service=service, options=options)
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        # Агрессивное скрытие всех признаков автоматизации через CDP
+        stealth_script = """
+            // Удаляем navigator.webdriver
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            
+            // Восстанавливаем navigator.plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            
+            // Восстанавливаем navigator.languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+            
+            // Добавляем window.chrome
+            window.chrome = {
+                runtime: {}
+            };
+            
+            // Переопределяем permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            
+            // Переопределяем getParameter для WebGL
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37445) {
+                    return 'Intel Inc.';
+                }
+                if (parameter === 37446) {
+                    return 'Intel Iris OpenGL Engine';
+                }
+                return getParameter.call(this, parameter);
+            };
+        """
+        
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": stealth_script
+        })
+        
+        return driver
     
     def _create_firefox_driver(self) -> webdriver.Firefox:
         """Создает драйвер Firefox."""
@@ -196,15 +250,65 @@ class BrowserManager:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--remote-debugging-port=0")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
         options.add_experimental_option("useAutomationExtension", False)
+        options.add_argument("--disable-blink-features=AutomationControlled")
         
         yandex_driver_path = os.path.join(get_resources_path(), "yandexdriver.exe")
         if not os.path.exists(yandex_driver_path):
             raise FileNotFoundError(f"YandexDriver не найден: {yandex_driver_path}")
         
         service = ChromeService(yandex_driver_path)
-        return webdriver.Chrome(service=service, options=options)
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        # Агрессивное скрытие всех признаков автоматизации через CDP
+        stealth_script = """
+            // Удаляем navigator.webdriver
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            
+            // Восстанавливаем navigator.plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            
+            // Восстанавливаем navigator.languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+            
+            // Добавляем window.chrome
+            window.chrome = {
+                runtime: {}
+            };
+            
+            // Переопределяем permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            
+            // Переопределяем getParameter для WebGL
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37445) {
+                    return 'Intel Inc.';
+                }
+                if (parameter === 37446) {
+                    return 'Intel Iris OpenGL Engine';
+                }
+                return getParameter.call(this, parameter);
+            };
+        """
+        
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": stealth_script
+        })
+        
+        return driver
     
     def start(self, url: str, count: int, browser_type: str) -> bool:
         """

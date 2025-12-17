@@ -88,6 +88,11 @@ def create_chrome_driver(profile_path: str):
     options_chrome.add_argument("--allow-running-insecure-content")
     options_chrome.add_argument("--no-first-run")
     options_chrome.add_argument("--no-default-browser-check")
+    
+    # Скрываем признаки автоматизации
+    options_chrome.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    options_chrome.add_experimental_option("useAutomationExtension", False)
+    options_chrome.add_argument("--disable-blink-features=AutomationControlled")
 
     driver_path = ChromeDriverManager().install()
     if not isinstance(driver_path, str):
@@ -95,6 +100,54 @@ def create_chrome_driver(profile_path: str):
     
     service = ChromeService(driver_path)
     driver = webdriver.Chrome(service=service, options=options_chrome)
+    
+    # Агрессивное скрытие всех признаков автоматизации через CDP
+    stealth_script = """
+        // Удаляем navigator.webdriver
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        });
+        
+        // Восстанавливаем navigator.plugins
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5]
+        });
+        
+        // Восстанавливаем navigator.languages
+        Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en']
+        });
+        
+        // Добавляем window.chrome
+        window.chrome = {
+            runtime: {}
+        };
+        
+        // Переопределяем permissions
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+            parameters.name === 'notifications' ?
+                Promise.resolve({ state: Notification.permission }) :
+                originalQuery(parameters)
+        );
+        
+        // Переопределяем getParameter для WebGL
+        const getParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+            if (parameter === 37445) {
+                return 'Intel Inc.';
+            }
+            if (parameter === 37446) {
+                return 'Intel Iris OpenGL Engine';
+            }
+            return getParameter.call(this, parameter);
+        };
+    """
+    
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": stealth_script
+    })
+    
     return driver
 
 
@@ -167,8 +220,9 @@ def create_yandex_driver(profile_path: str):
     options.add_argument("--no-default-browser-check")
     
     # Убираем плашку "управляет автоматизированное ПО"
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
     options.add_experimental_option("useAutomationExtension", False)
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
     # Путь к yandexdriver.exe в корне проекта
     yandex_driver_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "yandexdriver.exe"))
@@ -178,6 +232,54 @@ def create_yandex_driver(profile_path: str):
 
     service = ChromeService(yandex_driver_path)
     driver = webdriver.Chrome(service=service, options=options)
+    
+    # Агрессивное скрытие всех признаков автоматизации через CDP
+    stealth_script = """
+        // Удаляем navigator.webdriver
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        });
+        
+        // Восстанавливаем navigator.plugins
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5]
+        });
+        
+        // Восстанавливаем navigator.languages
+        Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en']
+        });
+        
+        // Добавляем window.chrome
+        window.chrome = {
+            runtime: {}
+        };
+        
+        // Переопределяем permissions
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+            parameters.name === 'notifications' ?
+                Promise.resolve({ state: Notification.permission }) :
+                originalQuery(parameters)
+        );
+        
+        // Переопределяем getParameter для WebGL
+        const getParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+            if (parameter === 37445) {
+                return 'Intel Inc.';
+            }
+            if (parameter === 37446) {
+                return 'Intel Iris OpenGL Engine';
+            }
+            return getParameter.call(this, parameter);
+        };
+    """
+    
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": stealth_script
+    })
+    
     return driver
 
 
