@@ -24,6 +24,20 @@ DEFAULT_BROWSER = "firefox"
 # ====================================================================
 
 
+def normalize_url(url: str) -> str:
+    """Нормализует URL, добавляя протокол если его нет."""
+    url = url.strip()
+    if not url:
+        return url
+    
+    # Проверяем наличие протокола
+    if not url.startswith(("http://", "https://", "file://")):
+        # Если протокола нет, добавляем https://
+        url = f"https://{url}"
+    
+    return url
+
+
 def cleanup_chrome_profile(profile_path: str) -> None:
     """Удаляет файлы блокировок и другие временные артефакты профиля Chrome."""
     os.makedirs(profile_path, exist_ok=True)
@@ -303,7 +317,7 @@ def main():
     args = parser.parse_args()
     
     # Используем значения из аргументов или значения по умолчанию
-    url = args.url
+    url = normalize_url(args.url)  # Нормализуем URL (добавляем протокол если нужно)
     count = args.count
     browser = args.browser
     
