@@ -27,7 +27,7 @@ pip install -r requirements.txt
 4. Для Firefox: поместите расширения в формате `.xpi` в папку `extensions/`
 
 5. Для Yandex Browser:
-   - Скачайте [YandexDriver](https://github.com/nicknaz/nicknaz/blob/master/README_YandexDriver.md) и поместите `yandexdriver.exe` в корень проекта
+   - Скачайте [YandexDriver](https://github.com/yandex/YandexDriver/releases) и поместите `yandexdriver.exe` в корень проекта
    - Подготовьте базовый профиль в папке `yandex_profile/` (опционально)
 
 ---
