@@ -62,6 +62,17 @@ class BrowserLauncherApp(ctk.CTk):
         self.url_entry = ctk.CTkEntry(url_input_frame, placeholder_text="https://example.com", height=36)
         self.url_entry.pack(side="left", fill="x", expand=True)
         
+        self.smoke_btn = ctk.CTkButton(
+            url_input_frame,
+            text="смоки",
+            command=self._on_smoke_click,
+            height=36,
+            width=80,
+            fg_color="#5a5a5a",
+            hover_color="#454545"
+        )
+        self.smoke_btn.pack(side="left", padx=(10, 0))
+        
         self.save_url_var = ctk.BooleanVar(value=False)
         self.save_url_checkbox = ctk.CTkCheckBox(
             url_input_frame, 
@@ -331,6 +342,11 @@ class BrowserLauncherApp(ctk.CTk):
             self.browser_manager.cleanup_clones()
         
         threading.Thread(target=cleanup, daemon=True).start()
+    
+    def _on_smoke_click(self):
+        """Обработчик кнопки смоки - заменяет URL на smoke test адрес."""
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, "https://platform-app-feature-smoke-tests.kube.energochain.ru/portal/login")
     
     def _on_closing(self):
         """Обработчик закрытия окна."""
