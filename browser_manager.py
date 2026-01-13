@@ -9,6 +9,7 @@ import uuid
 import time
 import threading
 import ctypes
+import subprocess
 from typing import Callable, Optional, List
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -52,6 +53,113 @@ def get_short_path(long_path: str) -> str:
         pass
     
     return long_path
+
+
+def _make_long_path(path: str) -> str:
+    """Добавляет префикс \\?\ для поддержки длинных путей в Windows."""
+    if sys.platform != "win32":
+        return path
+    
+    # Если путь уже имеет префикс, возвращаем как есть
+    if path.startswith("\\\\?\\"):
+        return path
+    
+    # Преобразуем относительный путь в абсолютный
+    abs_path = os.path.abspath(path)
+    
+    # Добавляем префикс для длинных путей
+    if abs_path.startswith("\\\\"):
+        # UNC путь - используем \\?\UNC\
+        return "\\\\?\\UNC\\" + abs_path[2:]
+    else:
+        # Обычный путь - используем \\?\
+        return "\\\\?\\" + abs_path
+
+
+def copytree_long_path(src: str, dst: str, dirs_exist_ok: bool = False) -> None:
+    """Копирует дерево директорий с поддержкой длинных путей в Windows."""
+    if sys.platform == "win32":
+        # Используем robocopy для Windows, который поддерживает длинные пути
+        try:
+            # Создаем целевую директорию
+            os.makedirs(dst, exist_ok=True)
+            
+            # Используем robocopy с поддержкой длинных путей
+            # /E - копировать все поддиректории, включая пустые
+            # /COPYALL - копировать все атрибуты файлов
+            # /R:3 - 3 попытки при ошибках
+            # /W:1 - ждать 1 секунду между попытками
+            # /NFL - не логировать имена файлов
+            # /NDL - не логировать имена директорий
+            # /NP - не показывать прогресс
+            result = subprocess.run(
+                ["robocopy", src, dst, "/E", "/COPYALL", "/R:3", "/W:1", "/NFL", "/NDL", "/NP"],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 минут максимум
+            )
+            
+            # robocopy возвращает коды 0-7 как успешные (0 = нет файлов для копирования, 1-7 = успешно скопировано)
+            if result.returncode > 7:
+                # Если robocopy не сработал, пробуем стандартный способ
+                raise subprocess.CalledProcessError(result.returncode, "robocopy")
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            # Если robocopy недоступен или не сработал, пробуем стандартный способ
+            try:
+                shutil.copytree(src, dst, dirs_exist_ok=dirs_exist_ok)
+            except OSError as e:
+                # Если стандартный способ тоже не работает из-за длинных путей,
+                # пробуем рекурсивное копирование с обработкой длинных путей
+                _copytree_with_long_paths(src, dst, dirs_exist_ok)
+    else:
+        # Для не-Windows используем стандартный способ
+        shutil.copytree(src, dst, dirs_exist_ok=dirs_exist_ok)
+
+
+def _copytree_with_long_paths(src: str, dst: str, dirs_exist_ok: bool) -> None:
+    """Рекурсивное копирование с обработкой длинных путей для проблемных файлов."""
+    os.makedirs(dst, exist_ok=True)
+    
+    try:
+        items = os.listdir(src)
+    except (PermissionError, OSError):
+        return
+    
+    for item in items:
+        src_path = os.path.join(src, item)
+        dst_path = os.path.join(dst, item)
+        
+        try:
+            if os.path.isdir(src_path):
+                _copytree_with_long_paths(src_path, dst_path, dirs_exist_ok)
+            else:
+                try:
+                    shutil.copy2(src_path, dst_path)
+                except (OSError, IOError) as e:
+                    # Если путь слишком длинный, используем длинный путь
+                    if sys.platform == "win32" and len(src_path) > 260:
+                        try:
+                            src_file_long = _make_long_path(src_path)
+                            dst_file_long = _make_long_path(dst_path)
+                            # Создаем директорию для файла
+                            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                            # Копируем файл
+                            with open(src_file_long, 'rb') as fsrc:
+                                with open(dst_file_long, 'wb') as fdst:
+                                    shutil.copyfileobj(fsrc, fdst)
+                            # Копируем метаданные (стараемся использовать обычный путь)
+                            try:
+                                shutil.copystat(src_path, dst_path)
+                            except:
+                                pass
+                        except Exception:
+                            # Пропускаем проблемный файл
+                            pass
+                    else:
+                        raise
+        except Exception:
+            # Пропускаем проблемные файлы/папки
+            continue
 
 
 class BrowserManager:
@@ -106,7 +214,7 @@ class BrowserManager:
         os.makedirs(clones_root, exist_ok=True)
         
         profile_clone = os.path.join(clones_root, f"profile_{instance_index}_{uuid.uuid4().hex}")
-        shutil.copytree(base_profile, profile_clone, dirs_exist_ok=True)
+        copytree_long_path(base_profile, profile_clone, dirs_exist_ok=True)
         self._cleanup_chrome_profile(profile_clone)
         
         return profile_clone
@@ -118,7 +226,7 @@ class BrowserManager:
         os.makedirs(clones_root, exist_ok=True)
         
         profile_clone = os.path.join(clones_root, f"profile_{instance_index}_{uuid.uuid4().hex}")
-        shutil.copytree(base_profile, profile_clone, dirs_exist_ok=True)
+        copytree_long_path(base_profile, profile_clone, dirs_exist_ok=True)
         self._cleanup_chrome_profile(profile_clone)
         
         return profile_clone

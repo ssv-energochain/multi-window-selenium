@@ -59,13 +59,15 @@ def get_base_chrome_profile() -> str:
 
 def prepare_chrome_profile(instance_index: int) -> str:
     """Создает изолированную копию профиля Chrome для параллельного окна."""
+    from browser_manager import copytree_long_path
+    
     base_profile = get_base_chrome_profile()
 
     clones_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "chrome_profile_clones"))
     os.makedirs(clones_root, exist_ok=True)
 
     profile_clone = os.path.join(clones_root, f"profile_{instance_index}_{uuid.uuid4().hex}")
-    shutil.copytree(base_profile, profile_clone, dirs_exist_ok=True)
+    copytree_long_path(base_profile, profile_clone, dirs_exist_ok=True)
     cleanup_chrome_profile(profile_clone)
 
     return profile_clone
@@ -188,13 +190,15 @@ def get_base_yandex_profile() -> str:
 
 def prepare_yandex_profile(instance_index: int) -> str:
     """Создает изолированную копию профиля Yandex для параллельного окна."""
+    from browser_manager import copytree_long_path
+    
     base_profile = get_base_yandex_profile()
 
     clones_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "yandex_profile_clones"))
     os.makedirs(clones_root, exist_ok=True)
 
     profile_clone = os.path.join(clones_root, f"profile_{instance_index}_{uuid.uuid4().hex}")
-    shutil.copytree(base_profile, profile_clone, dirs_exist_ok=True)
+    copytree_long_path(base_profile, profile_clone, dirs_exist_ok=True)
     cleanup_chrome_profile(profile_clone)  # Yandex использует те же файлы блокировок
 
     return profile_clone
